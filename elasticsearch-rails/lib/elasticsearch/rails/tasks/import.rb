@@ -1,4 +1,21 @@
-# A collection of Rake tasks to facilitate importing data from yout models into Elasticsearch.
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# A collection of Rake tasks to facilitate importing data from your models into Elasticsearch.
 #
 # Add this e.g. into the `lib/tasks/elasticsearch.rake` file in your Rails application:
 #
@@ -22,7 +39,7 @@ namespace :elasticsearch do
   task :import => 'import:model'
 
   namespace :import do
-    desc <<-DESC.gsub(/    /, '')
+    import_model_desc = <<-DESC.gsub(/    /, '')
       Import data from your model (pass name as CLASS environment variable).
 
         $ rake environment elasticsearch:import:model CLASS='MyModel'
@@ -39,6 +56,7 @@ namespace :elasticsearch do
       Pass an ActiveRecord scope to limit the imported records:
         $ rake environment elasticsearch:import:model CLASS='Article' SCOPE='published'
     DESC
+    desc import_model_desc
     task :model do
       if ENV['CLASS'].to_s == ''
         puts '='*90, 'USAGE', '='*90, import_model_desc, ""
@@ -59,7 +77,7 @@ namespace :elasticsearch do
         rescue NoMethodError; end
       end
 
-      total_errors = klass.import force:      ENV.fetch('FORCE', false),
+      total_errors = klass.__elasticsearch__.import force:      ENV.fetch('FORCE', false),
                                   batch_size: ENV.fetch('BATCH', 1000).to_i,
                                   index:      ENV.fetch('INDEX', nil),
                                   type:       ENV.fetch('TYPE',  nil),

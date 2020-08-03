@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 module Elasticsearch
   module Model
     module Adapter
@@ -9,7 +26,7 @@ module Elasticsearch
       module Mongoid
 
         Adapter.register self,
-                         lambda { |klass| !!defined?(::Mongoid::Document) && klass.ancestors.include?(::Mongoid::Document) }
+                         lambda { |klass| !!defined?(::Mongoid::Document) && klass.respond_to?(:ancestors) && klass.ancestors.include?(::Mongoid::Document) }
 
         module Records
 
@@ -63,20 +80,17 @@ module Elasticsearch
           # @see https://github.com/karmi/retire/pull/724
           #
           def __find_in_batches(options={}, &block)
-            options[:batch_size] ||= 1_000
-            items = []
+            batch_size = options[:batch_size] || 1_000
+            query = options[:query]
+            named_scope = options[:scope]
+            preprocess = options[:preprocess]
 
-            all.each do |item|
-              items << item
-
-              if items.length % options[:batch_size] == 0
-                yield items
-                items = []
-              end
-            end
-
-            unless items.empty?
-              yield items
+            scope = all
+            scope = scope.send(named_scope) if named_scope
+            scope = query.is_a?(Proc) ? scope.class_exec(&query) : scope.where(query) if query
+  
+            scope.no_timeout.each_slice(batch_size) do |items|
+              yield (preprocess ? self.__send__(preprocess, items) : items)
             end
           end
 

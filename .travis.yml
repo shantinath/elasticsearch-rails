@@ -2,34 +2,70 @@
 # Configuration file for http://travis-ci.org/elasticsearch/elasticsearch-rails
 # -----------------------------------------------------------------------------
 
+dist: trusty
+sudo: required
 language: ruby
+services:
+  - mongodb
 
 branches:
   only:
     - master
-    - travis
+    - 6.x
+    - 7.x
 
-rvm:
-  - 1.9.3
-  - 2.0.0
+matrix:
+  include:
+    - rvm: 2.4
+      jdk: oraclejdk8
+      env: RAILS_VERSIONS=5.0
 
-jdk:
-  - openjdk7
+    - rvm: 2.5
+      jdk: oraclejdk8
+      env: RAILS_VERSIONS=5.0,6.0
+
+    - rvm: 2.6
+      jdk: oraclejdk8
+      env: RAILS_VERSIONS=5.0,6.0
+
+    - rvm: 2.7
+      jdk: oraclejdk8
+      env: RAILS_VERSIONS=5.0,6.0
+
+    - rvm: ruby-head
+      jdk: oraclejdk8
+      env: RAILS_VERSIONS=5.0,6.0
+
+    - rvm: jruby-9.2.9.0
+      jdk: oraclejdk8
+      env: RAILS_VERSIONS=5.0
+
+  allow_failures:
+    - rvm: ruby-head
+      jdk: oraclejdk8
+      env: RAILS_VERSIONS=5.0,6.0
 
 env:
-  - TEST_BUNDLE_GEMFILE=$PWD/elasticsearch/elasticsearch-rails/elasticsearch-model/gemfiles/3.0.gemfile
-  - TEST_BUNDLE_GEMFILE=$PWD/elasticsearch/elasticsearch-rails/elasticsearch-model/gemfiles/4.0.gemfile
+  global:
+    - ELASTICSEARCH_VERSION=7.8.0
+    - TEST_ES_SERVER=http://localhost:9250
+    - TEST_CLUSTER_PORT=9250
+    - QUIET=true
 
-services:
-  - mongodb
+before_install:
+  - source ./.ci/travis_before_script.sh
+  - gem update --system;
+  - gem update bundler
+  - gem --version
+  - bundle version
 
-before_script:
-  - ls -la /usr/share/elasticsearch/bin/elasticsearch
+install:
+  - bundle install
   - rake bundle:clean
   - rake bundle:install
 
 script:
-  - SERVER=launch TEST_CLUSTER_COMMAND=/usr/share/elasticsearch/bin/elasticsearch TEST_BUNDLE_GEMFILE=$TEST_BUNDLE_GEMFILE bundle exec rake test:all
+  - rake test:all
 
 notifications:
   disable: true

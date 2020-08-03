@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 module Elasticsearch
   module Model
 
@@ -36,7 +53,29 @@ module Elasticsearch
         #
         # @yield [Hash] Gives the Hash with the Elasticsearch response to the block
         #
-        # @return [Fixnum] Number of errors encountered during importing
+        # @return [Fixnum] default, number of errors encountered during importing
+        # @return [Array<Hash>] if +return+ option is specified to be +"errors"+,
+        #   contains only those failed items in the response +items+ key, e.g.:
+        #
+        #     [
+        #       {
+        #         "index" => {
+        #           "error" => 'FAILED',
+        #           "_index" => "test",
+        #           "_type" => "_doc",
+        #           "_id" => '1',
+        #           "_version" => 1,
+        #           "result" => "foo",
+        #           "_shards" => {
+        #             "total" => 1,
+        #             "successful" => 0,
+        #             "failed" => 1
+        #           },
+        #           "status" => 400
+        #         }
+        #       }
+        #     ]
+        #
         #
         # @example Import all records into the index
         #
@@ -68,6 +107,10 @@ module Elasticsearch
         #
         #    Article.import scope: 'published'
         #
+        # @example Pass an ActiveRecord query to limit the imported records
+        #
+        #    Article.import query: -> { where(author_id: author_id) }
+        #
         # @example Transform records during the import with a lambda
         #
         #    transform = lambda do |a|
@@ -78,24 +121,30 @@ module Elasticsearch
         #
         # @example Update the batch before yielding it
         #
-        #     class Article
-        #       # ...
-        #       def enrich(batch)
-        #         batch.each do |item|
-        #           item.metadata = MyAPI.get_metadata(item.id)
-        #         end
-        #         batch
-        #       end
-        #     end
+        #    class Article
+        #      # ...
+        #      def self.enrich(batch)
+        #        batch.each do |item|
+        #          item.metadata = MyAPI.get_metadata(item.id)
+        #        end
+        #        batch
+        #      end
+        #    end
         #
-        #    Article.import preprocess: enrich
+        #    Article.import preprocess: :enrich
+        #
+        # @example Return an array of error elements instead of the number of errors, e.g. to try importing these records again
+        #
+        #    Article.import return: 'errors'
         #
         def import(options={}, &block)
-          errors       = 0
+          errors       = []
           refresh      = options.delete(:refresh)   || false
           target_index = options.delete(:index)     || index_name
           target_type  = options.delete(:type)      || document_type
           transform    = options.delete(:transform) || __transform
+          pipeline     = options.delete(:pipeline)
+          return_value = options.delete(:return)    || 'count'
 
           unless transform.respond_to?(:call)
             raise ArgumentError,
@@ -104,22 +153,35 @@ module Elasticsearch
 
           if options.delete(:force)
             self.create_index! force: true, index: target_index
+          elsif !self.index_exists? index: target_index
+            raise ArgumentError,
+                  "#{target_index} does not exist to be imported into. Use create_index! or the :force option to create it."
           end
 
           __find_in_batches(options) do |batch|
-            response = client.bulk \
-                         index:   target_index,
-                         type:    target_type,
-                         body:    __batch_to_bulk(batch, transform)
+            params = {
+              index: target_index,
+              type:  target_type,
+              body:  __batch_to_bulk(batch, transform)
+            }
+
+            params[:pipeline] = pipeline if pipeline
+
+            response = client.bulk params
 
             yield response if block_given?
 
-            errors += response['items'].map { |k, v| k.values.first['error'] }.compact.length
+            errors +=  response['items'].select { |k, v| k.values.first['error'] }
           end
 
-          self.refresh_index! if refresh
+          self.refresh_index! index: target_index if refresh
 
-          return errors
+          case return_value
+            when 'errors'
+              errors
+            else
+              errors.size
+          end
         end
 
         def __batch_to_bulk(batch, transform)

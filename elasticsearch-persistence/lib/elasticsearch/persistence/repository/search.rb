@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 module Elasticsearch
   module Persistence
     module Repository
@@ -37,21 +54,24 @@ module Elasticsearch
         #     # GET http://localhost:9200/notes/note/_search
         #     # > {"query":{"match":{"title":"fox dog"}},"size":25}
         #
+        # @param [ Hash, String ] query_or_definition The query or search definition.
+        # @param [ Hash ] options The search options.
+        #
         # @return [Elasticsearch::Persistence::Repository::Response::Results]
         #
         def search(query_or_definition, options={})
-          type = document_type || (klass ? __get_type_from_class(klass) : nil  )
-
-          case
-          when query_or_definition.respond_to?(:to_hash)
-            response = client.search( { index: index_name, type: type, body: query_or_definition.to_hash }.merge(options) )
-          when query_or_definition.is_a?(String)
-            response = client.search( { index: index_name, type: type, q: query_or_definition }.merge(options) )
+          request = { index: index_name,
+                      type: document_type }
+          if query_or_definition.respond_to?(:to_hash)
+            request[:body] = query_or_definition.to_hash
+          elsif query_or_definition.is_a?(String)
+            request[:q] = query_or_definition
           else
             raise ArgumentError, "[!] Pass the search definition as a Hash-like object or pass the query as a String" +
-                                 " -- #{query_or_definition.class} given."
+              " -- #{query_or_definition.class} given."
           end
-          Response::Results.new(self, response)
+
+          Response::Results.new(self, client.search(request.merge(options)))
         end
 
         # Return the number of domain object in the index
@@ -68,18 +88,37 @@ module Elasticsearch
         #
         # @example Return the count of domain object matching a query in the Elasticsearch DSL
         #
-        #    repository.search(query: { match: { title: 'fox dog' } })
+        #    repository.count(query: { match: { title: 'fox dog' } })
         #    # => 1
+        #
+        # @param [ Hash, String ] query_or_definition The query or search definition.
+        # @param [ Hash ] options The search options.
         #
         # @return [Integer]
         #
         def count(query_or_definition=nil, options={})
           query_or_definition ||= { query: { match_all: {} } }
-          response = search query_or_definition, options.update(search_type: 'count')
-          response.response.hits.total
-        end
-      end
+          request = { index: index_name,
+                      type: document_type }
 
+          if query_or_definition.respond_to?(:to_hash)
+            request[:body] = query_or_definition.to_hash
+          elsif query_or_definition.is_a?(String)
+            request[:q] = query_or_definition
+          else
+            raise ArgumentError, "[!] Pass the search definition as a Hash-like object or pass the query as a String" +
+                " -- #{query_or_definition.class} given."
+          end
+
+          client.count(request.merge(options))[COUNT]
+        end
+
+        private
+
+        # The key for accessing the count in a Elasticsearch query response.
+        #
+        COUNT = 'count'.freeze
+      end
     end
   end
 end

@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 module Elasticsearch
   module Persistence
     module Repository
@@ -40,19 +57,35 @@ module Elasticsearch
         #     repository.exists?(1)
         #     => true
         #
+        # @param [ String, Integer ] id The id to search.
+        # @param [ Hash ] options The options.
+        #
         # @return [true, false]
         #
         def exists?(id, options={})
-          type     = document_type || (klass ? __get_type_from_class(klass) : '_all')
-          client.exists( { index: index_name, type: type, id: id }.merge(options) )
+          request = { index: index_name, id: id }
+          request[:type] = document_type if document_type
+          client.exists(request.merge(options))
         end
+
+        private
+
+        # The key for accessing the document found and returned from an
+        #   Elasticsearch _mget query.
+        #
+        DOCS = 'docs'.freeze
+
+        # The key for the boolean value indicating whether a particular id
+        #   has been successfully found in an Elasticsearch _mget query.
+        #
+        FOUND = 'found'.freeze
 
         # @api private
         #
         def __find_one(id, options={})
-          type     = document_type || (klass ? __get_type_from_class(klass) : '_all')
-          document = client.get( { index: index_name, type: type, id: id }.merge(options) )
-
+          request = { index: index_name, id: id }
+          request[:type] = document_type if document_type
+          document = client.get(request.merge(options))
           deserialize(document)
         rescue Elasticsearch::Transport::Transport::Errors::NotFound => e
           raise DocumentNotFound, e.message, caller
@@ -61,13 +94,14 @@ module Elasticsearch
         # @api private
         #
         def __find_many(ids, options={})
-          type     = document_type || (klass ? __get_type_from_class(klass) : '_all')
-          documents = client.mget( { index: index_name, type: type, body: { ids: ids } }.merge(options) )
-
-          documents['docs'].map { |document| document['found'] ? deserialize(document) : nil }
+          request = { index: index_name, body: { ids: ids } }
+          request[:type] = document_type if document_type
+          documents = client.mget(request.merge(options))
+          documents[DOCS].map do |document|
+            deserialize(document) if document[FOUND]
+          end
         end
       end
-
     end
   end
 end

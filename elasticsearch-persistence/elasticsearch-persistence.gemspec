@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 # coding: utf-8
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
@@ -23,33 +40,30 @@ Gem::Specification.new do |s|
 
   s.required_ruby_version = ">= 1.9.3"
 
-  s.add_dependency "elasticsearch",       '> 0.4'
-  s.add_dependency "elasticsearch-model", '>= 0.1'
-  s.add_dependency "activesupport",       '> 3'
-  s.add_dependency "activemodel",         '> 3'
+  s.add_dependency "elasticsearch",       '~> 7'
+  s.add_dependency "elasticsearch-model", '7.1.0'
+  s.add_dependency "activesupport",       '> 4'
+  s.add_dependency "activemodel",         '> 4'
   s.add_dependency "hashie"
-  s.add_dependency "virtus"
 
-  s.add_development_dependency "bundler", "~> 1.5"
-  s.add_development_dependency "rake"
+  s.add_development_dependency "bundler"
+  s.add_development_dependency "rake", "~> 12"
 
-  s.add_development_dependency "oj"
+  s.add_development_dependency "oj" unless defined?(JRUBY_VERSION)
 
-  s.add_development_dependency "rails"
+  s.add_development_dependency "rails", '> 4'
 
   s.add_development_dependency "elasticsearch-extensions"
 
-  s.add_development_dependency "minitest", "~> 4.0"
+  s.add_development_dependency "minitest"
+  s.add_development_dependency "test-unit"
   s.add_development_dependency "shoulda-context"
   s.add_development_dependency "mocha"
   s.add_development_dependency "turn"
   s.add_development_dependency "yard"
-  s.add_development_dependency "ruby-prof"
+  s.add_development_dependency "ruby-prof" unless defined?(JRUBY_VERSION)
   s.add_development_dependency "pry"
-  s.add_development_dependency "ci_reporter", "~> 1.9"
 
-  if defined?(RUBY_VERSION) && RUBY_VERSION > '1.9'
-    s.add_development_dependency "simplecov"
-    s.add_development_dependency "cane"
-  end
+  s.add_development_dependency "simplecov"
+  s.add_development_dependency "cane"
 end

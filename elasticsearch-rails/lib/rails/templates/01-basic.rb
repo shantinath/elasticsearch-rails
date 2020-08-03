@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 # =====================================================================================================
 # Template for generating a no-frills Rails application with support for Elasticsearch full-text search
 # =====================================================================================================
@@ -10,8 +27,7 @@
 #
 # * Git
 # * Ruby  >= 1.9.3
-# * Rails >= 4
-# * Java  >= 7 (for Elasticsearch)
+# * Rails >= 5
 #
 # Usage:
 # ------
@@ -22,55 +38,64 @@
 
 require 'uri'
 require 'net/http'
+require 'json'
 
-at_exit do
-  pid = File.read("#{destination_root}/tmp/pids/elasticsearch.pid") rescue nil
-  if pid
-    say_status  "Stop", "Elasticsearch", :yellow
-    run "kill #{pid}"
-  end
+$elasticsearch_url = ENV.fetch('ELASTICSEARCH_URL', 'http://localhost:9200')
+
+# ----- Check for Elasticsearch -------------------------------------------------------------------
+
+required_elasticsearch_version = '7'
+
+docker_command =<<-CMD.gsub(/\s{1,}/, ' ').strip
+  docker run \
+    --name elasticsearch-rails-searchapp \
+    --publish 9200:9200 \
+    --env "discovery.type=single-node" \
+    --env "cluster.name=elasticsearch-rails" \
+    --env "cluster.routing.allocation.disk.threshold_enabled=false" \
+    --rm \
+    docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.0
+CMD
+
+begin
+  cluster_info = Net::HTTP.get(URI.parse($elasticsearch_url))
+rescue Errno::ECONNREFUSED => e
+  say_status "ERROR", "Cannot connect to Elasticsearch on <#{$elasticsearch_url}>\n\n", :red
+  say_status "", "The application requires an Elasticsearch cluster running, " +
+                 "but no cluster has been found on <#{$elasticsearch_url}>."
+  say_status "", "The easiest way of launching Elasticsearch is by running it with Docker (https://www.docker.com/get-docker):\n\n"
+  say_status "", docker_command + "\n"
+  exit(1)
+rescue StandardError => e
+  say_status "ERROR", "#{e.class}: #{e.message}", :red
+  exit(1)
 end
+
+cluster_info = JSON.parse(cluster_info)
+
+unless cluster_info['version']
+  say_status "ERROR", "Cannot determine Elasticsearch version from <#{$elasticsearch_url}>", :red
+  say_status "", JSON.dump(cluster_info), :red
+  exit(1)
+end
+
+if cluster_info['version']['number'] < required_elasticsearch_version
+  say_status "ERROR",
+             "The application requires Elasticsearch version #{required_elasticsearch_version} or higher, found version #{cluster_info['version']['number']}.\n\n", :red
+  say_status "", "The easiest way of launching Elasticsearch is by running it with Docker (https://www.docker.com/get-docker):\n\n"
+  say_status "", docker_command + "\n"
+  exit(1)
+end
+
+# ----- Application skeleton ----------------------------------------------------------------------
 
 run "touch tmp/.gitignore"
 
-append_to_file ".gitignore", "vendor/elasticsearch-1.0.1/\n"
+append_to_file ".gitignore", "vendor/elasticsearch-5.2.1/\n"
 
 git :init
 git add:    "."
 git commit: "-m 'Initial commit: Clean application'"
-
-# ----- Download Elasticsearch --------------------------------------------------------------------
-
-unless (Net::HTTP.get(URI.parse('http://localhost:9200')) rescue false)
-  COMMAND = <<-COMMAND.gsub(/^    /, '')
-    curl -# -O "http://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-1.0.1.tar.gz"
-    tar -zxf elasticsearch-1.0.1.tar.gz
-    rm  -f   elasticsearch-1.0.1.tar.gz
-    ./elasticsearch-1.0.1/bin/elasticsearch -d -p #{destination_root}/tmp/pids/elasticsearch.pid
-  COMMAND
-
-  puts        "\n"
-  say_status  "ERROR", "Elasticsearch not running!\n", :red
-  puts        '-'*80
-  say_status  '',      "It appears that Elasticsearch is not running on this machine."
-  say_status  '',      "Is it installed? Do you want me to install it for you with this command?\n\n"
-  COMMAND.each_line { |l| say_status '', "$ #{l}" }
-  puts
-  say_status  '',      "(To uninstall, just remove the generated application directory.)"
-  puts        '-'*80, ''
-
-  if yes?("Install Elasticsearch?", :bold)
-    puts
-    say_status  "Install", "Elasticsearch", :yellow
-
-    commands = COMMAND.split("\n")
-    exec     = commands.pop
-    inside("vendor") do
-      commands.each { |command| run command }
-      run "(#{exec})"  # Launch Elasticsearch in subshell
-    end
-  end
-end unless ENV['RAILS_NO_ES_INSTALL']
 
 # ----- Add README --------------------------------------------------------------------------------
 
@@ -78,18 +103,18 @@ puts
 say_status  "README", "Adding Readme...\n", :yellow
 puts        '-'*80, ''; sleep 0.25
 
-remove_file 'README.rdoc'
+remove_file 'README.md'
 
-create_file 'README.rdoc', <<-README
-= Ruby on Rails and Elasticsearch: Example application
+create_file 'README.md', <<-README
+# Ruby on Rails and Elasticsearch: Example application
 
-This application is an example of integrating the {Elasticsearch}[http://www.elasticsearch.org]
+This application is an example of integrating the {Elasticsearch}[https://www.elastic.co]
 search engine with the {Ruby On Rails}[http://rubyonrails.org] web framework.
 
 It has been generated by application templates available at
 https://github.com/elasticsearch/elasticsearch-rails/tree/master/elasticsearch-rails/lib/rails/templates.
 
-== [1] Basic
+## [1] Basic
 
 The `basic` version provides a simple integration for a simple Rails model, `Article`, showing how
 to include the search engine support in your model, automatically index changes to records,
@@ -115,8 +140,8 @@ end
 
 # ----- Auxiliary gems ----------------------------------------------------------------------------
 
-gem 'turn',  group: 'test'
-gem 'mocha', group: 'test', require: 'mocha/setup'
+gem 'mocha', group: 'test'
+gem 'rails-controller-testing', group: 'test'
 
 # ----- Remove CoffeeScript, Sass and "all that jazz" ---------------------------------------------
 
@@ -131,9 +156,9 @@ puts
 say_status  "Rubygems", "Adding Elasticsearch libraries into Gemfile...\n", :yellow
 puts        '-'*80, ''; sleep 0.75
 
-gem 'elasticsearch',       git: 'git://github.com/elasticsearch/elasticsearch-ruby.git'
-gem 'elasticsearch-model', git: 'git://github.com/elasticsearch/elasticsearch-rails.git'
-gem 'elasticsearch-rails', git: 'git://github.com/elasticsearch/elasticsearch-rails.git'
+gem 'elasticsearch',       git: 'https://github.com/elasticsearch/elasticsearch-ruby.git'
+gem 'elasticsearch-model', git: 'https://github.com/elasticsearch/elasticsearch-rails.git'
+gem 'elasticsearch-rails', git: 'https://github.com/elasticsearch/elasticsearch-rails.git'
 
 
 git add:    "Gemfile*"
@@ -146,9 +171,8 @@ say_status  "Application", "Disabling asset logging in development...\n", :yello
 puts        '-'*80, ''; sleep 0.25
 
 environment 'config.assets.logger = false', env: 'development'
-gem 'quiet_assets',  group: "development"
+environment 'config.assets.quiet  = true',  env: 'development'
 
-git add:    "Gemfile*"
 git add:    "config/"
 git commit: "-m 'Disabled asset logging in development'"
 
@@ -209,8 +233,9 @@ inject_into_file 'app/controllers/articles_controller.rb', before: %r|^\s*# GET 
   CODE
 end
 
-inject_into_file 'app/views/articles/index.html.erb', after: %r{<h1>Listing articles</h1>} do
+inject_into_file 'app/views/articles/index.html.erb', after: %r{<h1>.*Articles</h1>}i do
   <<-CODE
+
 
   <hr>
 
@@ -221,7 +246,6 @@ inject_into_file 'app/views/articles/index.html.erb', after: %r{<h1>Listing arti
   <% end %>
 
   <hr>
-
   CODE
 end
 
@@ -237,21 +261,21 @@ resources :articles do
   end
 CODE
 
-gsub_file "#{Rails::VERSION::STRING > '4' ? 'test/controllers' : 'test/functional'}/articles_controller_test.rb", %r{setup do.*?end}m, <<-CODE
+gsub_file "test/controllers/articles_controller_test.rb", %r{setup do.*?end}m, <<-CODE
 setup do
     @article = articles(:one)
 
-    Article.__elasticsearch__.import
+    Article.__elasticsearch__.import force: true
     Article.__elasticsearch__.refresh_index!
   end
 CODE
 
-inject_into_file "#{Rails::VERSION::STRING > '4' ? 'test/controllers' : 'test/functional'}/articles_controller_test.rb", after: %r{test "should get index" do.*?end}m do
+inject_into_file "test/controllers/articles_controller_test.rb", after: %r{test "should get index" do.*?end}m do
   <<-CODE
 
 
   test "should get search results" do
-    get :search, q: 'mystring'
+    #{ Rails::VERSION::STRING > '5' ? 'get search_articles_url(q: "mystring")' : 'get :search, q: "mystring"' }
     assert_response :success
     assert_not_nil assigns(:articles)
     assert_equal 2, assigns(:articles).size
@@ -313,6 +337,10 @@ puts        '-'*80, ''
 
 git tag: "basic"
 git log: "--reverse --oneline"
+
+# ----- Install Webpacker -------------------------------------------------------------------------
+
+run 'rails webpacker:install'
 
 # ----- Start the application ---------------------------------------------------------------------
 

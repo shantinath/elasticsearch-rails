@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 module Elasticsearch
   module Model
 
@@ -10,8 +27,7 @@ module Elasticsearch
       # Implements Enumerable and forwards its methods to the {#results} object.
       #
       class Response
-        attr_reader :klass, :search, :response,
-                    :took, :timed_out, :shards
+        attr_reader :klass, :search
 
         include Enumerable
 
@@ -27,9 +43,7 @@ module Elasticsearch
         # @return [Hash]
         #
         def response
-          @response ||= begin
-            Hashie::Mash.new(search.execute!)
-          end
+          @response ||= HashWrapper.new(search.execute!)
         end
 
         # Returns the collection of "hits" from Elasticsearch
@@ -44,26 +58,42 @@ module Elasticsearch
         #
         # @return [Records]
         #
-        def records
-          @records ||= Records.new(klass, self)
+        def records(options = {})
+          @records ||= Records.new(klass, self, options)
         end
 
         # Returns the "took" time
         #
         def took
-          response['took']
+          raw_response['took']
         end
 
         # Returns whether the response timed out
         #
         def timed_out
-          response['timed_out']
+          raw_response['timed_out']
         end
 
         # Returns the statistics on shards
         #
         def shards
-          Hashie::Mash.new(response['_shards'])
+          @shards ||= response['_shards']
+        end
+
+        # Returns a Hashie::Mash of the aggregations
+        #
+        def aggregations
+          @aggregations ||= Aggregations.new(raw_response['aggregations'])
+        end
+
+        # Returns a Hashie::Mash of the suggestions
+        #
+        def suggestions
+          @suggestions ||= Suggestions.new(raw_response['suggest'])
+        end
+
+        def raw_response
+          @raw_response ||= @response ? @response.to_hash : search.execute!
         end
       end
     end

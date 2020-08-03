@@ -1,10 +1,47 @@
-#     $ rails new searchapp --skip --skip-bundle --template https://raw.github.com/elasticsearch/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/03-complex.rb
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
 
-# (See: 01-basic.rb, 02-pretty.rb)
+#     $ rails new searchapp --skip --skip-bundle --template https://raw.github.com/elasticsearch/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/03-expert.rb
 
-append_to_file 'README.rdoc', <<-README
+unless File.read('README.md').include? '## [2] Pretty'
+  say_status  "ERROR", "You have to run the 01-basic.rb and 02-pretty.rb templates first.", :red
+  exit(1)
+end
 
-== [3] Expert
+begin
+  require 'redis'
+rescue LoadError
+  say_status  "ERROR", "Please install the 'redis' gem before running this template", :red
+  exit(1)
+end
+
+begin
+  Redis.new.info
+rescue Redis::CannotConnectError
+  puts
+  say_status  "ERROR", "Redis not available", :red
+  say_status  "", "This template uses an asynchronous indexer via Sidekiq, and requires a running Redis server.
+  Make sure you have installed Redis (brew install redis) and that you have launched the server"
+  exit(1)
+end
+
+append_to_file 'README.md', <<-README
+
+## [3] Expert
 
 The `expert` template changes to a complex database schema with model relationships: article belongs
 to a category, has many authors and comments.
@@ -20,7 +57,7 @@ to a category, has many authors and comments.
 
 README
 
-git add:    "README.rdoc"
+git add:    "README.md"
 git commit: "-m '[03] Updated the application README'"
 
 # ----- Add gems into Gemfile ---------------------------------------------------------------------
@@ -57,19 +94,6 @@ end
 git add:    "Gemfile*"
 git add:    "config/"
 git commit: "-m 'Added Pry as the console for development'"
-
-# ----- Disable asset logging in development ------------------------------------------------------
-
-puts
-say_status  "Application", "Disabling asset logging in development...\n", :yellow
-puts        '-'*80, ''; sleep 0.25
-
-environment 'config.assets.logger = false', env: 'development'
-gem 'quiet_assets',  group: "development"
-
-git add:    "Gemfile*"
-git add:    "config/"
-git commit: "-m 'Disabled asset logging in development'"
 
 # ----- Run bundle install ------------------------------------------------------------------------
 
@@ -154,9 +178,10 @@ class Article < ActiveRecord::Base
 end
 CODE
 
+gsub_file "test/models/article_test.rb", %r{assert_equal 'foo', definition\[:query\]\[:multi_match\]\[:query\]}, "assert_equal 'foo', definition.to_hash[:query][:bool][:should][0][:multi_match][:query]"
+
 # copy_file File.expand_path('../searchable.rb', __FILE__), 'app/models/concerns/searchable.rb'
-get 'https://raw.github.com/elasticsearch/elasticsearch-rails/templates/elasticsearch-rails/lib/rails/templates/searchable.rb',
-    'app/models/concerns/searchable.rb'
+get 'https://raw.githubusercontent.com/elastic/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/searchable.rb', 'app/models/concerns/searchable.rb'
 
 insert_into_file "app/models/article.rb", after: "ActiveRecord::Base" do
   <<-CODE
@@ -170,13 +195,13 @@ insert_into_file "app/models/article.rb", after: "ActiveRecord::Base" do
   CODE
 end
 
-git add:    "app/models/"
+git add:    "app/models/ test/models"
 git commit: "-m 'Refactored the Elasticsearch integration into a concern\n\nSee:\n\n* http://37signals.com/svn/posts/3372-put-chubby-models-on-a-diet-with-concerns\n* http://joshsymonds.com/blog/2012/10/25/rails-concerns-v-searchable-with-elasticsearch/'"
 
 # ----- Add Sidekiq indexer -----------------------------------------------------------------------
 
 puts
-say_status  "Application", "Adding Sidekiq worker for updating the index...\n", :yellow
+say_status  "Sidekiq", "Adding Sidekiq worker for updating the index...\n", :yellow
 puts        '-'*80, ''; sleep 0.25
 
 gem "sidekiq"
@@ -184,10 +209,13 @@ gem "sidekiq"
 run "bundle install"
 
 # copy_file File.expand_path('../indexer.rb', __FILE__), 'app/workers/indexer.rb'
-get 'https://raw.github.com/elasticsearch/elasticsearch-rails/templates/elasticsearch-rails/lib/rails/templates/indexer.rb',
-    'app/workers/indexer.rb'
+get 'https://raw.githubusercontent.com/elastic/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/indexer.rb', 'app/workers/indexer.rb'
 
-git add:    "Gemfile* app/workers/"
+insert_into_file "test/test_helper.rb",
+                 "require 'sidekiq/testing'\n\n",
+                 before: "class ActiveSupport::TestCase\n"
+
+git add:    "Gemfile* app/workers/ test/test_helper.rb"
 git commit: "-m 'Added a Sidekiq indexer\n\nRun:\n\n    $ bundle exec sidekiq --queue elasticsearch --verbose\n\nSee http://sidekiq.org'"
 
 # ----- Add SearchController -----------------------------------------------------------------------
@@ -199,8 +227,6 @@ puts        '-'*80, ''; sleep 0.25
 create_file 'app/controllers/search_controller.rb' do
   <<-CODE.gsub(/^  /, '')
   class SearchController < ApplicationController
-    respond_to :json, :html
-
     def index
       options = {
         category:       params[:c],
@@ -211,29 +237,39 @@ create_file 'app/controllers/search_controller.rb' do
         comments:       params[:comments]
       }
       @articles = Article.search(params[:q], options).page(params[:page]).results
-
-      respond_with @articles
     end
-
   end
 
   CODE
 end
 
+# copy_file File.expand_path('../search_controller_test.rb', __FILE__), 'test/controllers/search_controller_test.rb'
+get 'https://raw.githubusercontent.com/elastic/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/search_controller_test.rb', 'test/controllers/search_controller_test.rb'
+
 route "get '/search', to: 'search#index', as: 'search'"
 gsub_file 'config/routes.rb', %r{root to: 'articles#index'$}, "root to: 'search#index'"
 
 # copy_file File.expand_path('../index.html.erb', __FILE__), 'app/views/search/index.html.erb'
-get 'https://raw.github.com/elasticsearch/elasticsearch-rails/templates/elasticsearch-rails/lib/rails/templates/index.html.erb',
-    'app/views/search/index.html.erb'
+get 'https://raw.githubusercontent.com/elastic/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/index.html.erb', 'app/views/search/index.html.erb'
 
 # copy_file File.expand_path('../search.css', __FILE__), 'app/assets/stylesheets/search.css'
-get 'https://raw.github.com/elasticsearch/elasticsearch-rails/templates/elasticsearch-rails/lib/rails/templates/search.css',
-    'app/assets/stylesheets/search.css'
+get 'https://raw.githubusercontent.com/elastic/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/search.css', 'app/assets/stylesheets/search.css'
 
-git add:    "app/controllers/ config/routes.rb"
+git add:    "app/controllers/ test/controllers/ config/routes.rb"
 git add:    "app/views/search/ app/assets/stylesheets/search.css"
 git commit: "-m 'Added SearchController#index'"
+
+# ----- Add SearchController -----------------------------------------------------------------------
+
+puts
+say_status  "Views", "Updating application layout...\n", :yellow
+puts        '-'*80, ''; sleep 0.25
+
+insert_into_file 'app/views/layouts/application.html.erb', <<-CODE, before: '</head>'
+  <link href="https://fonts.googleapis.com/css?family=Rokkitt:400,700" rel="stylesheet">
+CODE
+
+git commit: "-a -m 'Updated application template'"
 
 # ----- Add initializer ---------------------------------------------------------------------------
 
@@ -252,9 +288,8 @@ Elasticsearch::Model.client = Elasticsearch::Client.new host: ELASTICSEARCH_URL
 if Rails.env.development?
   tracer = ActiveSupport::Logger.new('log/elasticsearch.log')
   tracer.level =  Logger::DEBUG
+  Elasticsearch::Model.client.transport.tracer = tracer
 end
-
-Elasticsearch::Model.client.transport.tracer = tracer
 CODE
 
 git add:    "config/initializers"
@@ -280,13 +315,11 @@ say_status  "Database", "Re-creating the database with data and importing into E
 puts        '-'*80, ''; sleep 0.25
 
 # copy_file File.expand_path('../articles.yml.gz', __FILE__), 'db/articles.yml.gz'
-get 'https://raw.github.com/elasticsearch/elasticsearch-rails/templates/elasticsearch-rails/lib/rails/templates/articles.yml.gz',
-    'db/articles.yml.gz'
+get 'https://raw.githubusercontent.com/elastic/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/articles.yml.gz', 'db/articles.yml.gz'
 
 remove_file 'db/seeds.rb'
 # copy_file File.expand_path('../seeds.rb', __FILE__), 'db/seeds.rb'
-get 'https://raw.github.com/elasticsearch/elasticsearch-rails/templates/elasticsearch-rails/lib/rails/templates/seeds.rb',
-    'db/seeds.rb'
+get 'https://raw.githubusercontent.com/elastic/elasticsearch-rails/master/elasticsearch-rails/lib/rails/templates/seeds.rb', 'db/seeds.rb'
 
 rake "db:reset"
 rake "environment elasticsearch:import:model CLASS='Article' BATCH=100 FORCE=y"

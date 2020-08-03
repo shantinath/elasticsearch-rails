@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 # Mongoid and Elasticsearch
 # =========================
 #
@@ -21,7 +38,7 @@ Moped.logger.level = Logger::DEBUG
 
 Mongoid.connect_to 'articles'
 
-Elasticsearch::Model.client = Elasticsearch::Client.new host: 'localhost:9250', log: true
+Elasticsearch::Model.client = Elasticsearch::Client.new host: 'localhost:9200', log: true
 
 class Article
   include Mongoid::Document
@@ -49,7 +66,7 @@ Article.create id: '3', title: 'Foo Foo'
 
 # Index data
 #
-client = Elasticsearch::Client.new host:'localhost:9250', log:true
+client = Elasticsearch::Client.new host:'localhost:9200', log:true
 
 client.indices.delete index: 'articles' rescue nil
 client.bulk index: 'articles',

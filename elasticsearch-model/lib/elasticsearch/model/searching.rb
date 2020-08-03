@@ -1,3 +1,20 @@
+# Licensed to Elasticsearch B.V. under one or more contributor
+# license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright
+# ownership. Elasticsearch B.V. licenses this file to you under
+# the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 module Elasticsearch
   module Model
 
@@ -8,7 +25,7 @@ module Elasticsearch
       # Wraps a search request definition
       #
       class SearchRequest
-        attr_reader :klass, :definition
+        attr_reader :klass, :definition, :options
 
         # @param klass [Class] The class of the model
         # @param query_or_payload [String,Hash,Object] The search request definition
@@ -17,6 +34,7 @@ module Elasticsearch
         #
         def initialize(klass, query_or_payload, options={})
           @klass   = klass
+          @options = options
 
           __index_name    = options[:index] || klass.index_name
           __document_type = options[:type]  || klass.document_type
@@ -78,7 +96,8 @@ module Elasticsearch
         #                    fields: {
         #                      title: {}
         #                    }
-        #                  }
+        #                  },
+        #                  size: 50
         #
         #     response.results.first.title
         #     # => "Foo"
